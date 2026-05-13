@@ -104,7 +104,7 @@
 </main>
 <script>
 (() => {
-  const STORAGE_KEY = 'bib.v2.state';
+  const STORAGE_KEY = 'browserInBrowser.v2.state';
   const MAX_HISTORY_SIZE = 100;
   const addr = document.getElementById('addr');
   const open = document.getElementById('open');
@@ -131,7 +131,10 @@
     if(!v) return false;
     if(isDataURL(v) || isAbsoluteHTTP(v)) return true;
     const low = v.toLowerCase();
-    return low.startsWith('about:') || low.startsWith('file:');
+    return low.startsWith('about:');
+  }
+  function escapeAttr(value){
+    return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   }
   function currentUrl(){ return historyIndex >= 0 ? historyStack[historyIndex] : ''; }
   function safeDecode(v){ try { return decodeURIComponent(v); } catch { return ''; } }
@@ -159,7 +162,7 @@
       historyIndex: Math.min(historyIndex, MAX_HISTORY_SIZE - 1),
       updatedAt: Date.now()
     };
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { setStatus('Could not save state'); }
   }
   function loadState(){
     try {
@@ -229,11 +232,12 @@
     else {
       const resolved = resolveInput(v);
       const redirectTarget = isSafeNavigationTarget(resolved) ? resolved : 'https://www.ecosia.org';
-      // Keep script tags split so this inline script is not prematurely terminated by HTML parsing.
+      const redirectHTML =
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        `<meta http-equiv="refresh" content="0;url=${escapeAttr(redirectTarget)}">` +
+        `<title>Redirecting…</title><p>Redirecting to <a href="${escapeAttr(redirectTarget)}">${escapeAttr(redirectTarget)}</a></p>`;
       du = 'data:text/html;charset=utf-8,' + encodeURIComponent(
-        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Redirect</title><scr' +
-        `ipt>location.replace(${JSON.stringify(redirectTarget)})</scr` +
-        'ipt>'
+        redirectHTML
       );
     }
     navigator.clipboard?.writeText(du).then(()=>{ alert('Data URL copied to clipboard'); })
@@ -287,7 +291,7 @@
       setStatus('Blocked unsafe URL for new tab');
       return;
     }
-    window.open(src, '_blank', 'noopener');
+    window.open(src, '_blank', 'noopener,noreferrer');
   });
 
   share.addEventListener('click', () => {
