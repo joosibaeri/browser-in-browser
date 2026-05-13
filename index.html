@@ -146,7 +146,8 @@
     return FRAME_BLOCKED_HOSTS.some((blockedHost) => host === blockedHost || host.endsWith(`.${blockedHost}`));
   }
   function frameBlockedInfoURL(target){
-    const safeTarget = escapeAttr(target);
+    const safeHrefTarget = isAbsoluteHTTP(target) ? target : 'https://www.ecosia.org';
+    const safeTarget = escapeAttr(safeHrefTarget);
     const html =
       '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>Cannot embed this page</title><style>body{font-family:system-ui,Arial;padding:24px;line-height:1.5}h1{margin:0 0 10px;font-size:22px}p{margin:0 0 10px}a{color:#0b74a6;font-weight:600}</style>' +
@@ -241,7 +242,7 @@
     if(!url) return;
     navigateTo(url);
     if(isLikelyFrameBlocked(url)){
-      const popup = window.open(url, '_blank', 'noopener=yes,noreferrer=yes');
+      const popup = window.open(url, '_blank', 'noopener,noreferrer');
       setStatus(popup ? 'This site blocks embedding. Opened in a new tab.' : 'This site blocks embedding. Click "New Tab" to open it.');
     }
   });
