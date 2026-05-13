@@ -105,6 +105,7 @@
 <script>
 (() => {
   const STORAGE_KEY = 'bib.v2.state';
+  const MAX_HISTORY_SIZE = 100;
   const addr = document.getElementById('addr');
   const open = document.getElementById('open');
   const enc = document.getElementById('enc');
@@ -146,8 +147,8 @@
   }
   function saveState(){
     const state = {
-      historyStack: historyStack.slice(-100),
-      historyIndex: Math.min(historyIndex, 99),
+      historyStack: historyStack.slice(-MAX_HISTORY_SIZE),
+      historyIndex: Math.min(historyIndex, MAX_HISTORY_SIZE - 1),
       updatedAt: Date.now()
     };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
@@ -158,7 +159,7 @@
       if(!raw) return;
       const state = JSON.parse(raw);
       if(!Array.isArray(state.historyStack) || typeof state.historyIndex !== 'number') return;
-      historyStack.splice(0, historyStack.length, ...state.historyStack.filter(Boolean).slice(0, 100));
+      historyStack.splice(0, historyStack.length, ...state.historyStack.filter(Boolean).slice(0, MAX_HISTORY_SIZE));
       historyIndex = Math.max(-1, Math.min(state.historyIndex, historyStack.length - 1));
     } catch {}
   }
@@ -177,7 +178,7 @@
     if(push){
       if(historyIndex < historyStack.length - 1) historyStack.splice(historyIndex + 1);
       historyStack.push(src);
-      if(historyStack.length > 100) historyStack.shift();
+      if(historyStack.length > MAX_HISTORY_SIZE) historyStack.shift();
       historyIndex = historyStack.length - 1;
     }
     lastRequestedSrc = src;
@@ -218,6 +219,7 @@
     else if(isDataURL(v)) du = v;
     else {
       const resolved = resolveInput(v);
+      // Keep the closing script marker split so the browser does not terminate this inline script early.
       du = 'data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Redirect</title><scr' +
         `ipt>location.replace(${JSON.stringify(resolved)})</scr` +
@@ -300,8 +302,9 @@
 
   loadState();
   const fromHash = getHashURL();
+  const hasCurrentHistoryEntry = historyIndex >= 0 && historyStack[historyIndex];
   if(fromHash){
-    navigateTo(fromHash, { push: historyStack[historyIndex] !== fromHash, updateHash: false });
+    navigateTo(fromHash, { push: !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash, updateHash: false });
   } else if(historyIndex >= 0 && historyStack[historyIndex]){
     navigateTo(historyStack[historyIndex], { push: false, updateHash: true });
   } else {
