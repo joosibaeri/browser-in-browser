@@ -133,7 +133,6 @@
     const low = v.toLowerCase();
     return low.startsWith('about:') || low.startsWith('file:');
   }
-  function isSafeExternalURL(url){ return isAbsoluteHTTP(url); }
   function currentUrl(){ return historyIndex >= 0 ? historyStack[historyIndex] : ''; }
   function safeDecode(v){ try { return decodeURIComponent(v); } catch { return ''; } }
   function setStatus(msg){ statusEl.textContent = msg || ''; }
@@ -229,8 +228,8 @@
     else if(isDataURL(v)) du = v;
     else {
       const resolved = resolveInput(v);
-      const redirectTarget = isSafeExternalURL(resolved) ? resolved : 'https://www.ecosia.org';
-      // Keep the closing script marker split so the browser does not terminate this inline script early.
+      const redirectTarget = isSafeNavigationTarget(resolved) ? resolved : 'https://www.ecosia.org';
+      // Keep script tags split so this inline script is not prematurely terminated by HTML parsing.
       du = 'data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Redirect</title><scr' +
         `ipt>location.replace(${JSON.stringify(redirectTarget)})</scr` +
@@ -318,9 +317,9 @@
   loadState();
   const fromHash = getHashURL();
   const hasCurrentHistoryEntry = historyIndex >= 0 && historyStack[historyIndex];
-  const shouldPushHashToHistory = !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash;
+  const isNewHashURL = !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash;
   if(fromHash){
-    navigateTo(fromHash, { push: shouldPushHashToHistory, updateHash: false });
+    navigateTo(fromHash, { push: isNewHashURL, updateHash: false });
   } else if(hasCurrentHistoryEntry){
     navigateTo(historyStack[historyIndex], { push: false, updateHash: true });
   } else {
