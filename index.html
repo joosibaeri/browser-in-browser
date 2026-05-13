@@ -1,75 +1,216 @@
-// ...existing code...
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Data-URL Browser UI</title>
+<title>Browser in Browser</title>
 <style>
-  :root{--brand:#0b74a6;--pill:#fff;--muted:#667}
-  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111}
-  header{position:fixed;inset:0 0 auto 0;height:60px;background:var(--brand);display:flex;gap:8px;align-items:center;padding:8px;box-sizing:border-box;z-index:20}
-  .btn{height:44px;border-radius:10px;border:0;padding:0 12px;background:var(--pill);color:var(--brand);font-weight:600;display:inline-flex;align-items:center;justify-content:center}
-  .icon-btn{width:44px;min-width:44px;padding:0;border-radius:10px;background:rgba(255,255,255,0.12);color:#fff;font-weight:700}
-  #addr{flex:1;height:44px;border-radius:10px;border:0;padding:0 12px;font-size:16px;outline:0}
-  main{position:fixed;top:60px;right:0;left:0;bottom:0}
+  :root{
+    --brand:#0b74a6;
+    --brand-dark:#085a80;
+    --pill:#fff;
+    --muted:#667;
+  }
+  html,body{
+    height:100%;
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:#fff;
+    color:#111;
+  }
+  header{
+    position:fixed;
+    inset:0 0 auto 0;
+    background:linear-gradient(180deg,var(--brand),var(--brand-dark));
+    display:flex;
+    gap:8px;
+    align-items:center;
+    padding:8px;
+    box-sizing:border-box;
+    z-index:20;
+    flex-wrap:wrap;
+  }
+  .btn{
+    height:40px;
+    border-radius:10px;
+    border:0;
+    padding:0 12px;
+    background:var(--pill);
+    color:var(--brand);
+    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+  }
+  .icon-btn{
+    width:40px;
+    min-width:40px;
+    padding:0;
+    border-radius:10px;
+    border:0;
+    background:rgba(255,255,255,0.16);
+    color:#fff;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .icon-btn:disabled{opacity:.45;cursor:not-allowed}
+  #addr{
+    flex:1 1 280px;
+    min-width:180px;
+    height:40px;
+    border-radius:10px;
+    border:0;
+    padding:0 12px;
+    font-size:16px;
+    outline:0;
+  }
+  #status{
+    width:100%;
+    color:#eaf8ff;
+    font-size:12px;
+    line-height:1.3;
+    min-height:16px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  main{position:fixed;top:96px;right:0;left:0;bottom:0}
   iframe{width:100%;height:100%;border:0;background:#fff}
-  .small{font-size:13px;color:rgba(255,255,255,0.9)}
-  @media (orientation:portrait) { header{height:56px} }
+  @media (max-width:900px){
+    .btn{padding:0 10px}
+  }
+  @media (max-width:640px){
+    main{top:148px}
+    #addr{flex-basis:100%}
+  }
 </style>
 </head>
 <body>
 <header>
   <button id="back" class="icon-btn" aria-label="Back">◀</button>
   <button id="fwd" class="icon-btn" aria-label="Forward">▶</button>
+  <button id="reload" class="icon-btn" aria-label="Reload">↻</button>
+  <button id="home" class="icon-btn" aria-label="Home">⌂</button>
   <input id="addr" inputmode="search" placeholder="Paste data: URL, raw HTML, or search terms" autocomplete="off" autocapitalize="none" />
   <button id="open" class="btn">Open</button>
+  <button id="newtab" class="btn">New Tab</button>
+  <button id="share" class="btn">Share</button>
   <button id="enc" class="btn">Copy Data‑URL</button>
+  <div id="status" role="status" aria-live="polite"></div>
 </header>
 <main>
   <iframe id="view" sandbox="allow-scripts allow-forms"></iframe>
 </main>
 <script>
 (() => {
+  const STORAGE_KEY = 'browserInBrowser.v2.state';
+  const MAX_HISTORY_SIZE = 100;
+  const SEARCH_ENGINE_URL = 'https://www.ecosia.org/search?q=';
   const addr = document.getElementById('addr');
   const open = document.getElementById('open');
   const enc = document.getElementById('enc');
+  const reload = document.getElementById('reload');
+  const home = document.getElementById('home');
+  const newtab = document.getElementById('newtab');
+  const share = document.getElementById('share');
+  const statusEl = document.getElementById('status');
   const back = document.getElementById('back');
   const fwd = document.getElementById('fwd');
   const view = document.getElementById('view');
 
-  // internal history so back/forward works even with cross-origin
   const historyStack = [];
   let historyIndex = -1;
+  let lastRequestedSrc = '';
+  let requestStartedAt = Date.now();
 
   function isHTMLFragment(s){ return s && s.trim().startsWith('<'); }
   function isDataURL(s){ return s && s.trim().toLowerCase().startsWith('data:'); }
   function isAbsoluteHTTP(s){ const l=(s||'').trim().toLowerCase(); return l.startsWith('http://')||l.startsWith('https://'); }
+  function isSafeNavigationTarget(url){
+    const v = (url || '').trim();
+    if(!v) return false;
+    if(isDataURL(v) || isAbsoluteHTTP(v)) return true;
+    const low = v.toLowerCase();
+    return low.startsWith('about:');
+  }
+  function escapeAttr(value){
+    return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  }
+  function currentUrl(){ return historyIndex >= 0 ? historyStack[historyIndex] : ''; }
+  function safeDecode(v){ try { return decodeURIComponent(v); } catch { return ''; } }
+  function setStatus(msg){ statusEl.textContent = msg || ''; }
+  function buildShareURL(target){
+    const u = new URL(location.href);
+    u.hash = target ? `u=${encodeURIComponent(target)}` : '';
+    return u.toString();
+  }
+  function getHashURL(){
+    const hash = location.hash.replace(/^#/, '');
+    if(!hash.startsWith('u=')) return '';
+    const decoded = safeDecode(hash.slice(2));
+    return isSafeNavigationTarget(decoded) ? decoded : '';
+  }
+  function writeHash(target){
+    const hash = target ? `#u=${encodeURIComponent(target)}` : '';
+    if(location.hash !== hash){
+      history.replaceState(null, '', `${location.pathname}${location.search}${hash}`);
+    }
+  }
+  function saveState(){
+    const state = {
+      historyStack: historyStack.slice(-MAX_HISTORY_SIZE),
+      historyIndex: Math.max(-1, historyIndex - Math.max(0, historyStack.length - MAX_HISTORY_SIZE)),
+      updatedAt: Date.now()
+    };
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { setStatus('Could not save state'); }
+  }
+  function loadState(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return;
+      const state = JSON.parse(raw);
+      if(!Array.isArray(state.historyStack) || typeof state.historyIndex !== 'number') return;
+      historyStack.length = 0;
+      historyStack.push(...state.historyStack.filter(isSafeNavigationTarget).slice(0, MAX_HISTORY_SIZE));
+      historyIndex = Math.max(-1, Math.min(state.historyIndex, historyStack.length - 1));
+    } catch {}
+  }
   function resolveInput(input){
     if(!input) return '';
     const v = input.trim();
     if(isHTMLFragment(v)) return 'data:text/html;charset=utf-8,' + encodeURIComponent(v);
-    if(isDataURL(v) || isAbsoluteHTTP(v) || v.toLowerCase().startsWith('about:') || v.toLowerCase().startsWith('file:')) return v;
-    // treat plain host-like input that contains a dot as http if no scheme
+    if(isDataURL(v) || isAbsoluteHTTP(v) || v.toLowerCase().startsWith('about:')) return v;
     if(/\./.test(v) && !/\s/.test(v)) return 'https://' + v;
-    // fallback to Ecosia search
-    return 'https://www.ecosia.org/search?q=' + encodeURIComponent(v);
+    return SEARCH_ENGINE_URL + encodeURIComponent(v);
   }
 
-  function navigateTo(src){
+  function navigateTo(src, options = {}){
+    const { push = true, updateHash = true, updateInput = true } = options;
     if(!src) return;
-    // push to internal history
-    // if navigating after going back, drop forward entries
-    if(historyIndex < historyStack.length - 1) historyStack.splice(historyIndex + 1);
-    historyStack.push(src);
-    historyIndex = historyStack.length - 1;
+    if(push){
+      if(historyIndex < historyStack.length - 1) historyStack.splice(historyIndex + 1);
+      historyStack.push(src);
+      if(historyStack.length > MAX_HISTORY_SIZE) historyStack.shift();
+      historyIndex = historyStack.length - 1;
+    }
+    lastRequestedSrc = src;
     updateNavButtons();
+    if(updateInput) addr.value = src;
+    if(updateHash) writeHash(src);
+    requestStartedAt = Date.now();
     view.src = src;
+    saveState();
+    setStatus(`Loading: ${src}`);
   }
 
   function updateNavButtons(){
     back.disabled = historyIndex <= 0;
     fwd.disabled = historyIndex >= historyStack.length - 1;
+    reload.disabled = historyIndex < 0;
+    newtab.disabled = historyIndex < 0;
+    share.disabled = historyIndex < 0;
+    enc.disabled = !addr.value.trim();
   }
 
   open.addEventListener('click', () => {
@@ -81,21 +222,26 @@
   addr.addEventListener('keydown', (e) => {
     if(e.key === 'Enter'){ open.click(); e.preventDefault(); }
   });
+  addr.addEventListener('input', updateNavButtons);
 
   enc.addEventListener('click', () => {
     const v = addr.value || '';
     if(!v.trim()) return;
-    // if user pasted raw HTML -> encode as data URL
     let du;
     if(isHTMLFragment(v)) du = 'data:text/html;charset=utf-8,' + encodeURIComponent(v);
     else if(isDataURL(v)) du = v;
     else {
-      // resolve to either http(s) or ecosia search, then wrap into a minimal HTML that redirects => still a data URL
       const resolved = resolveInput(v);
-      // if resolved is a data: or http(s), create a tiny HTML that loads it in meta-refresh or iframe to produce a self-contained data URL
-      du = 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Redirect</title><script>location.replace(${JSON.stringify(resolved)})</script>`);
+      const redirectTarget = isSafeNavigationTarget(resolved) ? resolved : 'https://www.ecosia.org';
+      const redirectHTML =
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        `<title>Redirecting…</title><p>Redirecting to <a href="${escapeAttr(redirectTarget)}">${escapeAttr(redirectTarget)}</a></p>` +
+        '<scr' + `ipt>location.replace(${JSON.stringify(redirectTarget)})</scr` + 'ipt>';
+      du = 'data:text/html;charset=utf-8,' + encodeURIComponent(
+        redirectHTML
+      );
     }
-    navigator.clipboard?.writeText(du).then(()=>{ alert('Data URL copied to clipboard'); })
+    (navigator.clipboard?.writeText(du) || Promise.reject()).then(()=>{ setStatus('Data URL copied to clipboard'); })
       .catch(()=>{ prompt('Copy this data URL', du); });
   });
 
@@ -103,7 +249,13 @@
     if(historyIndex > 0){
       historyIndex--;
       updateNavButtons();
-      view.src = historyStack[historyIndex];
+      const src = historyStack[historyIndex];
+      writeHash(src);
+      addr.value = src;
+      requestStartedAt = Date.now();
+      view.src = src;
+      saveState();
+      setStatus(`Loaded from history: ${src}`);
     }
   });
 
@@ -111,14 +263,74 @@
     if(historyIndex < historyStack.length - 1){
       historyIndex++;
       updateNavButtons();
-      view.src = historyStack[historyIndex];
+      const src = historyStack[historyIndex];
+      writeHash(src);
+      addr.value = src;
+      requestStartedAt = Date.now();
+      view.src = src;
+      saveState();
+      setStatus(`Loaded from history: ${src}`);
     }
   });
 
-  // quick-demo starter page (optional)
+  reload.addEventListener('click', () => {
+    const src = currentUrl();
+    if(!src) return;
+    requestStartedAt = Date.now();
+    view.src = src;
+    setStatus(`Reloaded: ${src}`);
+  });
+
+  home.addEventListener('click', () => {
+    navigateTo(starterURL);
+  });
+
+  newtab.addEventListener('click', () => {
+    const src = currentUrl();
+    if(!src) return;
+    if(!isSafeNavigationTarget(src)){
+      setStatus('Blocked unsafe URL for new tab');
+      return;
+    }
+    window.open(src, '_blank', 'noopener,noreferrer');
+  });
+
+  share.addEventListener('click', () => {
+    const src = currentUrl();
+    if(!src) return;
+    const shareURL = buildShareURL(src);
+    (navigator.clipboard?.writeText(shareURL) || Promise.reject())
+      .then(() => setStatus('Share URL copied to clipboard'))
+      .catch(() => prompt('Copy this share URL', shareURL));
+  });
+
+  view.addEventListener('load', () => {
+    const ms = Math.max(0, Date.now() - requestStartedAt);
+    const src = currentUrl() || lastRequestedSrc;
+    setStatus(`Loaded in ${ms}ms ${src ? `· ${src}` : ''}`);
+  });
+
+  window.addEventListener('hashchange', () => {
+    const target = getHashURL();
+    if(!target || target === currentUrl()) return;
+    navigateTo(target);
+  });
+
   const starter = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome</title><style>body{font-family:system-ui,Arial;padding:20px}h1{margin:0 0 8px}a{color:#0b74a6}</style><h1>Data‑URL Browser</h1><p>Paste raw HTML, a data: URL, an http(s) address, or search terms. Plain terms search on Ecosia.</p><p><small>Tap "Copy Data‑URL" to get a single-file data: URL you can save or share.</small></p>`;
-  // load starter as data URL and add to history
-  navigateTo('data:text/html;charset=utf-8,' + encodeURIComponent(starter));
+  const starterURL = 'data:text/html;charset=utf-8,' + encodeURIComponent(starter);
+
+  loadState();
+  const fromHash = getHashURL();
+  const hasCurrentHistoryEntry = historyIndex >= 0 && historyStack[historyIndex];
+  const isNewHashURL = !hasCurrentHistoryEntry || (hasCurrentHistoryEntry && historyStack[historyIndex] !== fromHash);
+  if(fromHash){
+    navigateTo(fromHash, { push: isNewHashURL, updateHash: false });
+  } else if(hasCurrentHistoryEntry){
+    navigateTo(historyStack[historyIndex], { push: false, updateHash: true });
+  } else {
+    navigateTo(starterURL);
+  }
+  updateNavButtons();
 })();
 </script>
 </body>
