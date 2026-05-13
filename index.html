@@ -100,12 +100,13 @@
   <div id="status" role="status" aria-live="polite"></div>
 </header>
 <main>
-  <iframe id="view" sandbox="allow-scripts allow-forms allow-popups allow-modals"></iframe>
+  <iframe id="view" sandbox="allow-scripts allow-forms"></iframe>
 </main>
 <script>
 (() => {
   const STORAGE_KEY = 'browserInBrowser.v2.state';
   const MAX_HISTORY_SIZE = 100;
+  const SEARCH_ENGINE_URL = 'https://www.ecosia.org/search?q=';
   const addr = document.getElementById('addr');
   const open = document.getElementById('open');
   const enc = document.getElementById('enc');
@@ -159,7 +160,7 @@
   function saveState(){
     const state = {
       historyStack: historyStack.slice(-MAX_HISTORY_SIZE),
-      historyIndex: Math.min(historyIndex, MAX_HISTORY_SIZE - 1),
+      historyIndex: Math.max(-1, historyIndex - Math.max(0, historyStack.length - MAX_HISTORY_SIZE)),
       updatedAt: Date.now()
     };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { setStatus('Could not save state'); }
@@ -179,9 +180,9 @@
     if(!input) return '';
     const v = input.trim();
     if(isHTMLFragment(v)) return 'data:text/html;charset=utf-8,' + encodeURIComponent(v);
-    if(isDataURL(v) || isAbsoluteHTTP(v) || v.toLowerCase().startsWith('about:') || v.toLowerCase().startsWith('file:')) return v;
+    if(isDataURL(v) || isAbsoluteHTTP(v) || v.toLowerCase().startsWith('about:')) return v;
     if(/\./.test(v) && !/\s/.test(v)) return 'https://' + v;
-    return 'https://www.ecosia.org/search?q=' + encodeURIComponent(v);
+    return SEARCH_ENGINE_URL + encodeURIComponent(v);
   }
 
   function navigateTo(src, options = {}){
