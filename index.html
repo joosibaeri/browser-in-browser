@@ -107,7 +107,7 @@
   const STORAGE_KEY = 'browserInBrowser.v2.state';
   const MAX_HISTORY_SIZE = 100;
   const SEARCH_ENGINE_URL = 'https://www.ecosia.org/search?q=';
-  const SEARCH_ENGINE_HOME_URL = SEARCH_ENGINE_URL.split('/search?q=')[0] + '/';
+  const SEARCH_ENGINE_HOME_URL = (() => { try { return new URL(SEARCH_ENGINE_URL).origin + '/'; } catch { return 'https://www.ecosia.org/'; } })();
   const FRAME_BLOCKED_HOSTS = ['ecosia.org'];
   const addr = document.getElementById('addr');
   const open = document.getElementById('open');
@@ -137,7 +137,6 @@
     return low.startsWith('about:');
   }
   function hostnameFromURL(url){
-    if(!URL.canParse(url)) return '';
     try { return new URL(url).hostname.toLowerCase(); } catch { return ''; }
   }
   function isLikelyFrameBlocked(url){
@@ -153,7 +152,7 @@
       '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>Cannot embed this page</title><style>body{font-family:system-ui,Arial;padding:24px;line-height:1.5}h1{margin:0 0 10px;font-size:22px}p{margin:0 0 10px}a{color:#0b74a6;font-weight:600}</style>' +
       '<h1>This site blocks embedded display</h1>' +
-      `<p>The requested page cannot be shown inside this app.</p><p><a href="${safeTarget}" target="_blank" rel="noopener noreferrer" aria-label="Open destination in a new tab">Open in a new tab</a></p>`;
+      `<p>The requested page cannot be shown inside this app.</p><p><a href="${safeTarget}" target="_blank" rel="noopener noreferrer">Open in a new tab</a></p>`;
     return 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
   }
   function viewSrcFor(url){
@@ -244,7 +243,7 @@
     navigateTo(url);
     if(isLikelyFrameBlocked(url)){
       const popup = window.open(url, '_blank', 'noopener,noreferrer');
-      setStatus(popup ? 'This site blocks embedding. Opened in a new tab.' : 'This site blocks embedding. Click "New Tab" to open it.');
+      setStatus(popup ? 'This site blocks embedding. Opened in a new tab.' : 'This site blocks embedding. Please use the New Tab button.');
     }
   });
 
