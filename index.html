@@ -159,7 +159,8 @@
       if(!raw) return;
       const state = JSON.parse(raw);
       if(!Array.isArray(state.historyStack) || typeof state.historyIndex !== 'number') return;
-      historyStack.splice(0, historyStack.length, ...state.historyStack.filter(Boolean).slice(0, MAX_HISTORY_SIZE));
+      historyStack.length = 0;
+      historyStack.push(...state.historyStack.filter(Boolean).slice(0, MAX_HISTORY_SIZE));
       historyIndex = Math.max(-1, Math.min(state.historyIndex, historyStack.length - 1));
     } catch {}
   }
@@ -303,9 +304,10 @@
   loadState();
   const fromHash = getHashURL();
   const hasCurrentHistoryEntry = historyIndex >= 0 && historyStack[historyIndex];
+  const shouldPushHashTarget = !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash;
   if(fromHash){
-    navigateTo(fromHash, { push: !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash, updateHash: false });
-  } else if(historyIndex >= 0 && historyStack[historyIndex]){
+    navigateTo(fromHash, { push: shouldPushHashTarget, updateHash: false });
+  } else if(hasCurrentHistoryEntry){
     navigateTo(historyStack[historyIndex], { push: false, updateHash: true });
   } else {
     navigateTo(starterURL);
