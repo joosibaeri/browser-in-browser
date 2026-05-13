@@ -235,13 +235,13 @@
       const redirectTarget = isSafeNavigationTarget(resolved) ? resolved : 'https://www.ecosia.org';
       const redirectHTML =
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-        `<meta http-equiv="refresh" content="0;url=${escapeAttr(redirectTarget)}">` +
-        `<title>Redirecting…</title><p>Redirecting to <a href="${escapeAttr(redirectTarget)}">${escapeAttr(redirectTarget)}</a></p>`;
+        `<title>Redirecting…</title><p>Redirecting to <a href="${escapeAttr(redirectTarget)}">${escapeAttr(redirectTarget)}</a></p>` +
+        '<scr' + `ipt>location.replace(${JSON.stringify(redirectTarget)})</scr` + 'ipt>';
       du = 'data:text/html;charset=utf-8,' + encodeURIComponent(
         redirectHTML
       );
     }
-    navigator.clipboard?.writeText(du).then(()=>{ alert('Data URL copied to clipboard'); })
+    (navigator.clipboard?.writeText(du) || Promise.reject()).then(()=>{ setStatus('Data URL copied to clipboard'); })
       .catch(()=>{ prompt('Copy this data URL', du); });
   });
 
@@ -299,7 +299,7 @@
     const src = currentUrl();
     if(!src) return;
     const shareURL = buildShareURL(src);
-    navigator.clipboard?.writeText(shareURL)
+    (navigator.clipboard?.writeText(shareURL) || Promise.reject())
       .then(() => setStatus('Share URL copied to clipboard'))
       .catch(() => prompt('Copy this share URL', shareURL));
   });
@@ -322,7 +322,7 @@
   loadState();
   const fromHash = getHashURL();
   const hasCurrentHistoryEntry = historyIndex >= 0 && historyStack[historyIndex];
-  const isNewHashURL = !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash;
+  const isNewHashURL = !hasCurrentHistoryEntry || (hasCurrentHistoryEntry && historyStack[historyIndex] !== fromHash);
   if(fromHash){
     navigateTo(fromHash, { push: isNewHashURL, updateHash: false });
   } else if(hasCurrentHistoryEntry){
