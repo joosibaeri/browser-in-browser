@@ -126,6 +126,14 @@
   function isHTMLFragment(s){ return s && s.trim().startsWith('<'); }
   function isDataURL(s){ return s && s.trim().toLowerCase().startsWith('data:'); }
   function isAbsoluteHTTP(s){ const l=(s||'').trim().toLowerCase(); return l.startsWith('http://')||l.startsWith('https://'); }
+  function isSafeNavigationTarget(url){
+    const v = (url || '').trim();
+    if(!v) return false;
+    if(isDataURL(v) || isAbsoluteHTTP(v)) return true;
+    const low = v.toLowerCase();
+    return low.startsWith('about:') || low.startsWith('file:');
+  }
+  function isSafeExternalURL(url){ return isAbsoluteHTTP(url); }
   function currentUrl(){ return historyIndex >= 0 ? historyStack[historyIndex] : ''; }
   function safeDecode(v){ try { return decodeURIComponent(v); } catch { return ''; } }
   function setStatus(msg){ statusEl.textContent = msg || ''; }
@@ -137,7 +145,8 @@
   function getHashURL(){
     const hash = location.hash.replace(/^#/, '');
     if(!hash.startsWith('u=')) return '';
-    return safeDecode(hash.slice(2));
+    const decoded = safeDecode(hash.slice(2));
+    return isSafeNavigationTarget(decoded) ? decoded : '';
   }
   function writeHash(target){
     const hash = target ? `#u=${encodeURIComponent(target)}` : '';
@@ -160,7 +169,7 @@
       const state = JSON.parse(raw);
       if(!Array.isArray(state.historyStack) || typeof state.historyIndex !== 'number') return;
       historyStack.length = 0;
-      historyStack.push(...state.historyStack.filter(Boolean).slice(0, MAX_HISTORY_SIZE));
+      historyStack.push(...state.historyStack.filter(isSafeNavigationTarget).slice(0, MAX_HISTORY_SIZE));
       historyIndex = Math.max(-1, Math.min(state.historyIndex, historyStack.length - 1));
     } catch {}
   }
@@ -220,10 +229,11 @@
     else if(isDataURL(v)) du = v;
     else {
       const resolved = resolveInput(v);
+      const redirectTarget = isSafeExternalURL(resolved) ? resolved : 'https://www.ecosia.org';
       // Keep the closing script marker split so the browser does not terminate this inline script early.
       du = 'data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Redirect</title><scr' +
-        `ipt>location.replace(${JSON.stringify(resolved)})</scr` +
+        `ipt>location.replace(${JSON.stringify(redirectTarget)})</scr` +
         'ipt>'
       );
     }
@@ -274,6 +284,10 @@
   newtab.addEventListener('click', () => {
     const src = currentUrl();
     if(!src) return;
+    if(!isSafeNavigationTarget(src)){
+      setStatus('Blocked unsafe URL for new tab');
+      return;
+    }
     window.open(src, '_blank', 'noopener');
   });
 
@@ -304,9 +318,9 @@
   loadState();
   const fromHash = getHashURL();
   const hasCurrentHistoryEntry = historyIndex >= 0 && historyStack[historyIndex];
-  const shouldPushHashTarget = !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash;
+  const shouldPushHashToHistory = !hasCurrentHistoryEntry || historyStack[historyIndex] !== fromHash;
   if(fromHash){
-    navigateTo(fromHash, { push: shouldPushHashTarget, updateHash: false });
+    navigateTo(fromHash, { push: shouldPushHashToHistory, updateHash: false });
   } else if(hasCurrentHistoryEntry){
     navigateTo(historyStack[historyIndex], { push: false, updateHash: true });
   } else {
